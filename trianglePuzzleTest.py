@@ -1,6 +1,6 @@
 # This is code used to test triangePuzzle.py
 
-from triaglePuzzle import *
+from trianglePuzzle import *
 
 
 # Print out the board and all the pieces
