@@ -26,7 +26,7 @@ tk.Button(window, text="Submit", width=6, command=Click).grid(row=3,column=0, st
 
 # Output Label
 output = tk.Text(window, width=30, height=1, wrap=tk.WORD, background="white")
-output.grid(row=5,column=0, sticky=tk.W)
+output.grid(row=5, column=0, sticky=tk.W)
 
 # Exit Label
 def CloseWindow():

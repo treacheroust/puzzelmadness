@@ -107,8 +107,21 @@ class HexVertex:
         self.offset_cord = None
         pass
 
+    def __eq__(self, other):
+        for i in range(6):
+            if (self.edges[i] is None) != (other.edges[i] is None):
+                return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
+
     def IsEmpty(self):
         return all([e is None for e in self.edges])
+
+    def FlipVirtically(self, count=1):
+        temp = self.edges[0]; self.edges[0] = self.edges[4]; self.edges[4] = temp
+        temp = self.edges[1]; self.edges[1] = self.edges[3]; self.edges[3] = temp
 
     def Rotate(self, count=1):
         for i in range(count):
@@ -156,11 +169,58 @@ class HexGraph:
         for w in range(self.width):
             self.grid.append([HexVertex() for h in range(self.height)])        
 
+    def __eq__(self, other):
+        if self.width != other.width:
+            return False
+        if self.height != other.height:
+            return False
+        for x in range(self.width):
+            for y in range(self.height):
+                if self.grid[x][y] != other.grid[x][y]:
+                    return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        hash_sum = 0
+        for x in range(self.width):
+            for y in range(self.height):
+                hash_str = "%d,%d: " % (x,y)
+                hash_str += ",".join([str(e is None) for e in self.grid[x][y].edges])
+                hash_sum += hash(hash_str)
+        return hash_sum
+
     def UpdateVertexCoordinates(self):
         for x in range(self.width):
             for y in range(self.height):
                 self.grid[x][y].offset_cord = (x,y)
                 self.grid[x][y].cube_cord = evenr_to_cube_cord((x,y))
+
+    def Copy(self):
+        graph = HexGraph(self.width, self.height, self.is_first_row_right_shifted)
+        for x in range(graph.width):
+            for y in range(graph.height):
+                graph.grid[x][y] = self.grid[x][y].Copy()
+        return graph
+
+    def Flip(self):
+        # Return a flipped version of the graph
+        graph = self.Copy()
+
+        # We want an odd number of rows, so when the bottom row becomes the top, it's
+        # goes from right-shifted to right-shifted.
+        if is_even(graph.height):
+            for col in graph.grid:
+                col.append(HexVertex())
+            graph.height += 1
+
+        for x in range(graph.width):
+            graph.grid[x].reverse()
+            for v in graph.grid[x]:
+                v.FlipVirtically()
+        return graph
 
     def Rotate(self):
         # Rotate clockwise 60 degrees
@@ -214,8 +274,50 @@ class HexGraph:
         return graph
 
     def Trim(self):
+        self.SqueezeUpAndRight()
         self.TrimRows()
         self.TrimColumns()
+
+    def IsRowEmpty(self, y):
+        for x in range(self.width):
+            if not self.grid[x][y].IsEmpty():
+                return False
+        return True
+
+    def SqueezeUpAndRight(self):
+
+        # Shift stuff up and to the right into any empty rows
+        empty_count = 0
+        for y in range(self.height):
+            if self.IsRowEmpty(y):
+                empty_count += 1
+            else:
+                break
+
+        #print "empty_count", empty_count
+        #self.PrintPretty()
+
+        # Add columns to allow shifting to the right
+        for i in range(empty_count):
+            self.grid.append([HexVertex() for h in range(self.height)])
+            self.width += 1
+
+        # Shift up and to the right
+        def ShiftUpAndRight():
+            for y in range(0, self.height-1):
+                self.grid[0][y] = HexVertex()
+                for x in range(0, self.width-1):
+                    if is_odd(y):
+                        self.grid[x+1][y] = self.grid[x][y+1]  # up and right
+                    else:
+                        self.grid[x][y] = self.grid[x][y+1]  # just up
+                    self.grid[x][y+1] = HexVertex()
+
+        for i in range(empty_count):
+            ShiftUpAndRight()
+
+        #self.PrintPretty()
+
 
     def TrimColumns(self):
         new_grid = []
@@ -235,15 +337,15 @@ class HexGraph:
             if is_empty_row:
                 empty_row_indexes.append(y)
 
-        num_to_removed_from_top = 0
-        for i in range(self.height):
-            if i in empty_row_indexes:
-                num_to_removed_from_top += 1
+        num_to_remove_from_top = 0
+        for y in range(self.height):
+            if y in empty_row_indexes:
+                num_to_remove_from_top += 1
             else:
                 break
 
         # Rows must be trimed 2-at-a-time to maintain the even-r or odd-r coordinate system
-        if is_odd(num_to_removed_from_top):
+        if is_odd(num_to_remove_from_top):
             empty_row_indexes.pop(0)
         
         empty_row_indexes.reverse()  # Must delete these in reverse index order
@@ -251,6 +353,14 @@ class HexGraph:
             for col in self.grid:
                 del col[empty_row_index]
         self.height -= len(empty_row_indexes)
+
+        if is_odd(num_to_remove_from_top):
+            for x in range(self.width):
+                if x == 0:
+                    assert(self.grid[x][0].IsEmpty())
+                else:
+                    self.grid[x-1][0] = self.grid[x][0]
+
 
     def Print(self):
         for y in range(self.height):
