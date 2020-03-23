@@ -73,13 +73,13 @@ def add(a, b):
 
 def cube_to_evenr_cord(cube_cord):
     x, y, z = cube_cord
-    col = x + (z + (z & 1)) / 2
+    col = int(x + (z + (z & 1)) / 2)
     row = z
     return (col, row)
 
 def evenr_to_cube_cord(evenr_cord):
     col, row = evenr_cord
-    x = col - (row + (row & 1)) / 2
+    x = int(col - (row + (row & 1)) / 2)
     z = row
     y = -x - z
     return (x, y, z)
@@ -189,6 +189,7 @@ class HexGraph:
             for y in range(self.height):
                 hash_str = "%d,%d: " % (x,y)
                 hash_str += ",".join([str(e is None) for e in self.grid[x][y].edges])
+                #print(hash_str)
                 hash_sum += hash(hash_str)
         return hash_sum
 
@@ -243,7 +244,7 @@ class HexGraph:
                 v.offset_cord = cube_to_evenr_cord(v.cube_cord)
                 v.Rotate()  # Rotate the edges too
                 if False and not v.IsEmpty():
-                    print "Rotated", (x,y), "to", v.offset_cord
+                    print("Rotated", (x,y), "to", v.offset_cord)
 
                 min_x = min((min_x, v.offset_cord[0]))
                 min_y = min((min_y, v.offset_cord[1]))
@@ -258,11 +259,11 @@ class HexGraph:
         height = max_y - min_y + 1
         right_shift = self.is_first_row_right_shifted if (min_y % 2 == 0) else (not self.is_first_row_right_shifted)
         if False:
-            print "width", width, \
+            print("width", width, \
                   "heigth", height, \
                   "(min_x,max_x)", (min_x, max_x), \
                   "(min_y,max_y)", (min_y,max_y), \
-                  "right", self.is_first_row_right_shifted
+                  "right", self.is_first_row_right_shifted)
             
         graph = HexGraph(width, height, right_shift)
         for y in range(height):
@@ -294,7 +295,7 @@ class HexGraph:
             else:
                 break
 
-        #print "empty_count", empty_count
+        #print("empty_count", empty_count)
         #self.PrintPretty()
 
         # Add columns to allow shifting to the right
@@ -367,7 +368,7 @@ class HexGraph:
             row = ""
             for x in range(self.width):
                 row += str(self.grid[x][y]) + " "
-            print row
+            print(row)
 
     def PrintPretty(self):
     
@@ -415,7 +416,7 @@ class HexGraph:
                 row = offset
                 for x in range(self.width):
                     row += GetTok(scan, self.grid[x][y]) + "   "
-                print row
+                print(row)
 
 
 # Generate a hex graph from a string representation
@@ -425,12 +426,12 @@ def GenerateHexGraph(data, included_pieces):
 
     # The string representation is 3x3 blocks, so divide by 3
     assert (len(rows) % 3 == 0)
-    grid_height = len(rows) / 3
+    grid_height = int(len(rows) / 3)
     for row in rows:
         assert(len(row) % 3 == 0)
 
     # The string representation is 3x3 blocks, and every other is for spacing only, so divide by 3 and 2
-    grid_width = len(rows[0]) / 3 / 2
+    grid_width = int(len(rows[0]) / 3 / 2)
 
     def UpdateVertex(vertex, row_name, tok):
         tok = list(tok)
@@ -469,7 +470,7 @@ def GenerateHexGraph(data, included_pieces):
                         rowDebug.insert(right+1, "]")
                         rowDebug = "".join(rowDebug)
                         if False:
-                            print x,y, "row", row, "col", col, row_name, "string_rows", string_rows, "string_cols", string_cols, rowDebug
+                            print(x,y, "row", row, "col", col, row_name, "string_rows", string_rows, "string_cols", string_cols, rowDebug)
                     UpdateVertex(grid[x][y], row_name, rows[row][left:right])
     return graph
 

@@ -1,7 +1,7 @@
 # This is the solver for the hex puzzle
 
 from hexPuzzle import *
-import Tkinter as tk
+import tkinter as tk
 import collections
 import threading
 import time
@@ -47,13 +47,13 @@ def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
     def pos_to_pixel_pos(pos):
         x, y = pos
         if is_even(y):
-            x += graph_offset[0] - (graph_offset[1]/2)
+            x += graph_offset[0] - (graph_offset[1] // 2)
         else:
-            x += graph_offset[0] - ((graph_offset[1]+1) / 2)
+            x += graph_offset[0] - ((graph_offset[1]+1) // 2)
         y += graph_offset[1]
         offset = 0
         if is_even(y):
-            offset = row_width / 2
+            offset = row_width // 2
         return (right_shift + offset + x * row_width,
                 down_shift + row_height * y)
 
@@ -68,7 +68,7 @@ def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
             for x in range(graph.width):
                 pixel_x, pixel_y = pos_to_pixel_pos((x, y))
                 if False:
-                    print "(x,y)", (x,y), "(pixel_x, pixel_y)", (pixel_x, pixel_y)
+                    print("(x,y)", (x,y), "(pixel_x, pixel_y)", (pixel_x, pixel_y))
                     canvas.create_line(pixel_x, pixel_y, pixel_x, pixel_y, width=4, fill="red", capstyle=capstyle, tags=tags)
 
                 #            0   1
@@ -98,17 +98,17 @@ def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
                                            tags=tags)
 
                 if graph.grid[x][y].edges[0] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width / 2, pixel_y - row_height)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width // 2, pixel_y - row_height)
                 if graph.grid[x][y].edges[1] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width / 2, pixel_y - row_height)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width // 2, pixel_y - row_height)
                 if graph.grid[x][y].edges[2] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width / 2, pixel_y)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width // 2, pixel_y)
                 if graph.grid[x][y].edges[3] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width / 2, pixel_y + row_height)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x + row_width // 2, pixel_y + row_height)
                 if graph.grid[x][y].edges[4] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width / 2, pixel_y + row_height)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width // 2, pixel_y + row_height)
                 if graph.grid[x][y].edges[5] is not None:
-                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width / 2, pixel_y)
+                    draw_line_helper(pixel_x, pixel_y, pixel_x - row_width // 2, pixel_y)
 
     for vertex in vertex_highlights:
         pixel_x, pixel_y = pos_to_pixel_pos(vertex)
@@ -125,12 +125,12 @@ def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
         # This shows what's going on visually while the AI is solving the puzzle
 class SolverGui:
 
-    XSTRETCH = 315.0/270.0
+    XSTRETCH = 315.0 // 270.0
     BOARD_HEIGHT = 400
     BOARD_WIDTH = int(BOARD_HEIGHT * XSTRETCH)
     PIECE_HEIGHT = 60
     PIECE_WIDTH = int(PIECE_HEIGHT * XSTRETCH)
-    UPDATE_PERIOD_MS = 10
+    UPDATE_PERIOD_MS = 100
 
     def __init__(self, find_solutions_function, find_solutions_args):
         self.piece_row_height = 0
@@ -253,18 +253,25 @@ class SolverGui:
 # Calculate the row height that would fill a certain canvas height for the given graph
 def GetRowHeightToFitCanvas(pixel_height, graph_rows, pad):
     pixel_height = pixel_height - (pad * 2)
-    pixels_between_rows = pixel_height / (graph_rows - 1)
+    pixels_between_rows = pixel_height // (graph_rows - 1)
     row_height = pixels_between_rows
     actual_pixel_height = pixels_between_rows * (graph_rows - 1)  # Account for integer rounding
     if pixel_height != actual_pixel_height:
-        print "pixel_height", pixel_height, "!=" "actual_pixel_height", actual_pixel_height
+        print("pixel_height", pixel_height, "!=" "actual_pixel_height", actual_pixel_height)
     if False:
-        print "pixel_height", pixel_height, "pad", pad, graph_rows, "graph_rows", graph_rows, "hex_height", row_height
+        print("pixel_height", pixel_height, "pad", pad, graph_rows, "graph_rows", graph_rows, "hex_height", row_height)
     return row_height
 
 
 # This is the logic to find solutions to the puzzle.  It can use the solveGui to visualize progress.
 def FindSolutions(board_graph_original, piece_graphs, gui):
+
+    def dup_check(piece_list):
+        for i in range(len(piece_list)):
+            if piece_list.index(piece_list[i]) != i:
+                print("check list", hash(piece_list[i]), piece_list.index(piece_list[i]), i)
+                piece_list[i].PrintPretty()
+                piece_list[piece_list.index(piece_list[i])].PrintPretty()
 
     def adjust_pos(pos, graph_offset):
         # Adjust the postion by the given offset.
@@ -272,9 +279,9 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
         # movement also needs a 0.5 units of horizontal movement 
         x, y = pos
         if is_even(y):
-            x += graph_offset[0] - (graph_offset[1] / 2)
+            x += graph_offset[0] - (graph_offset[1] // 2)
         else:
-            x += graph_offset[0] - ((graph_offset[1] + 1) / 2)
+            x += graph_offset[0] - ((graph_offset[1] + 1) // 2)
         y += graph_offset[1]
         return (x, y)
 
@@ -341,7 +348,7 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
 
         def gui_clear_try_piece_on_board(self, delay_multiplier=1):
             if self.gui_show_each_try:
-                print self.gui_sleep_time, delay_multiplier
+                print(self.gui_sleep_time, delay_multiplier)
                 self.gui.ClearBoard("piece_on_board")
                 time.sleep(self.gui_sleep_time * delay_multiplier)
 
@@ -354,6 +361,14 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                                    vertex_highlight_size=5,
                                    tags="placed_piece")
                 time.sleep(self.gui_sleep_time * delay_multiplier)
+
+        def gui_force_show_placed_pieces(self):
+            old = self.gui_show_placed_pieces
+            self.gui_show_placed_pieces = True
+            self.gui.ClearBoard("placed_piece")
+            for piece_id, (piece_graph, offset) in self.placed_pieces.items():
+                self.gui_placed_piece(piece_graph, offset)
+            self.gui_show_placed_pieces = old
 
         def gui_clear_placed_pieces(self, delay_multiplier=1):
             if self.gui_show_placed_pieces:
@@ -368,7 +383,8 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
 
         def start_over(self):
             self.gui_clear_placed_pieces()
-            for piece_id, graphs in self.piece_graphs.iteritems():
+            self.available_pieces = []
+            for piece_id, graphs in self.piece_graphs.items():
                 for graph in graphs:
                     self.available_pieces.append(graph)
             self.placed_pieces = {}
@@ -464,9 +480,10 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                     now_available.append(piece)
 
             self.available_pieces = [a for a in self.available_pieces if a.name != piece_graph.name]
-            if len(self.placed_pieces) > self.max_placed_pieces:
+            if len(self.placed_pieces) >= self.max_placed_pieces:
                 self.max_placed_pieces = len(self.placed_pieces)
-            
+                self.gui_force_show_placed_pieces()
+
         def run(self):
             # ------ Main ----------------
             # 1. Find a vertexes in the graph with the fewest edges (this will be the sides at first)
@@ -481,18 +498,23 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
             while True:
                 self.gui_update_settings()
                 vertex_pos = self.get_vertex_with_fewest_edges()
-                if vertex_pos is None:
-                    print "Done"
+                if vertex_pos is None or len(self.placed_pieces) == 12:
+                    self.gui_force_show_placed_pieces()
+                    print("Done")
                     break
                 self.gui_target_vertex(vertex_pos)
                 
                 # Try all the pieces in random order
                 to_try_list = copy.copy(self.available_pieces)
                 random.shuffle(to_try_list)
+                dup_check(to_try_list)
+
                 for to_try in to_try_list:
                     self.gui_highlight_piece(to_try, "gray", 0)
+
                 found_fit = False
                 for to_try in to_try_list:
+
                     self.gui_highlight_piece(to_try, "yellow")
                     fits_offset = self.fits_on_board(to_try, board_graph, vertex_pos)
                     if fits_offset is not None:
@@ -503,7 +525,7 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                     self.gui_highlight_piece(to_try, "red", .1)
                 if not found_fit:
                     self.gui_target_vertex(vertex_pos, "red")
-                    print "attempt %5d: placed %2d pieces before getting stuck. Max is %2d" % (attempt_num , len(self.placed_pieces), self.max_placed_pieces)
+                    print("attempt %5d: placed %2d pieces before getting stuck. Max is %2d" % (attempt_num , len(self.placed_pieces), self.max_placed_pieces))
                     attempt_num += 1
                     self.start_over()
 
@@ -545,12 +567,13 @@ if __name__== '__main__':
     # Calculate row height for displaying pieces
 
     min_row_height = 9999
-    for piece_id, graphs in piece_graphs.iteritems():
+    for piece_id, graphs in piece_graphs.items():
         piece_graphs[piece_id] = list(graphs)  # Convert the set to a list
         for graph in graphs:
             row_height = GetRowHeightToFitCanvas(SolverGui.PIECE_HEIGHT, graph.height, padding)
             if row_height < min_row_height:
                 min_row_height = row_height
+
 
     # Create the UI
 
