@@ -7,10 +7,52 @@ import threading
 import time
 import random
 import copy
+from PIL import Image   # pip install Pillow to get the PIL package, then ghostscript
+                        # also needs to be installed, and it's bin directory added to the path
+
 
 color_piece = "#5A2D0D"  # dark brown
 color_piece_border = "black"
 color_bg = "grey"
+
+def DrawHexEdge(edge, canvas, row_height, padding, **kwargs):
+
+    line_width = kwargs.get("line_width", 4)
+    line_color = kwargs.get("line_color", "black")
+    capstyle = kwargs.get("capstyle", tk.ROUND)
+    xstretch = kwargs.get("xstretch")
+    pixel_shift = kwargs.get("pixel_shift", (0,0))
+    graph_offset = kwargs.get("graph_offset", (0, 0))
+    tags = kwargs.get("tags")
+
+    right_shift = int(padding * xstretch) + pixel_shift[0]
+    down_shift = padding + pixel_shift[1]
+    row_width = int(row_height * xstretch)
+
+    def pos_to_pixel_pos(pos):
+        x, y = pos
+        if is_even(y):
+            x += graph_offset[0] - (graph_offset[1] // 2)
+        else:
+            x += graph_offset[0] - ((graph_offset[1]+1) // 2)
+        y += graph_offset[1]
+        offset = 0
+        if is_even(y):
+            offset = row_width // 2
+        return (right_shift + offset + x * row_width,
+                down_shift + row_height * y)
+
+    def draw_line_helper(x, y, x2, y2):
+        canvas.create_line(x, y,
+                           x2, y2,
+                           fill=line_color,
+                           width=line_width,
+                           capstyle=capstyle,
+                           tags=tags)
+    x, y = pos_to_pixel_pos(edge[0])
+    x2, y2 = pos_to_pixel_pos(edge[1])
+    draw_line_helper(x, y, x2, y2)
+
 
 def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
 
@@ -184,12 +226,12 @@ class SolverGui:
         # Add a canvas for each rotation and flip of each piece
         piece_height = SolverGui.PIECE_HEIGHT
         piece_width = SolverGui.PIECE_WIDTH
-        self.peices = {}
+        self.pieces = {}
         for y in range(12):
             for x in range(12):
                 c = tk.Canvas(self.pieces_pane, height=piece_height, width=piece_width, bg=color_bg, borderwidth=0)
                 c.grid(column=x, row=y)
-                self.peices[(x, y)] = c
+                self.pieces[(x, y)] = c
 
     def AddUiUpdate(self, work):
         with self.update_lock:
@@ -198,10 +240,10 @@ class SolverGui:
 
     def DrawPiece(self, piece_graph, **kwargs):
         def draw_func():
-            self.peices[piece_graph.gui_pos].delete("all")
-            self.peices[piece_graph.gui_pos].configure(bg=color_bg)
+            self.pieces[piece_graph.gui_pos].delete("all")
+            self.pieces[piece_graph.gui_pos].configure(bg=color_bg)
             DrawHexGraph(piece_graph,
-                         self.peices[piece_graph.gui_pos],
+                         self.pieces[piece_graph.gui_pos],
                          self.piece_row_height,
                          padding,
                          line_width=4,
@@ -225,13 +267,24 @@ class SolverGui:
     def DrawBoard(self, board_graph, **kwargs):
         def draw_func():
             kwargs["line_color"] = kwargs.get("line_color", "dark grey")
+            kwargs["line_width"] = kwargs.get("line_width", 12)
+            kwargs["border_color"] = kwargs.get("border_color", "black")
+            kwargs["border_width"] = kwargs.get("border_width", 5)
             DrawHexGraph(board_graph,
                         self.board,
                         self.board_row_height,
                         self.board_padding,
-                        line_width=12,
-                        border_width=5,
-                        border_color="black",
+                        xstretch=SolverGui.XSTRETCH,
+                        **kwargs)
+        self.AddUiUpdate(draw_func)
+
+    def DrawEdge(self, edge, **kwargs):
+        def draw_func():
+            kwargs["line_color"] = kwargs.get("line_color", "red")
+            DrawHexEdge(edge,
+                        self.board,
+                        self.board_row_height,
+                        self.board_padding,
                         xstretch=SolverGui.XSTRETCH,
                         **kwargs)
         self.AddUiUpdate(draw_func)
@@ -264,14 +317,7 @@ def GetRowHeightToFitCanvas(pixel_height, graph_rows, pad):
 
 
 # This is the logic to find solutions to the puzzle.  It can use the solveGui to visualize progress.
-def FindSolutions(board_graph_original, piece_graphs, gui):
-
-    def dup_check(piece_list):
-        for i in range(len(piece_list)):
-            if piece_list.index(piece_list[i]) != i:
-                print("check list", hash(piece_list[i]), piece_list.index(piece_list[i]), i)
-                piece_list[i].PrintPretty()
-                piece_list[piece_list.index(piece_list[i])].PrintPretty()
+def FindSolutions(board_graph_external, piece_graphs, gui):
 
     def adjust_pos(pos, graph_offset):
         # Adjust the postion by the given offset.
@@ -293,6 +339,9 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
             self.gui_sleep_time = 0.2
             self.gui_highlight_piece_sleep_time = 0.0
             self.gui_show_each_try = False
+            self.gui_show_removals = False
+            self.gui_show_stranded_tree_walk = False
+            self.gui_show_stranded = False
             self.gui_show_piece_highlights = True
             self.gui_show_target_vertex = True
             self.gui_show_placed_pieces = True
@@ -300,6 +349,9 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
             self.placed_pieces = {}
             self.max_placed_pieces = 0
             self.board_graph = None
+            self.board_graph_previous = []
+            self.available_pieces_previous = []
+            self.placed_pieces_previous = []
 
         def gui_update_settings(self):
             self.gui_show_placed_pieces = False
@@ -340,15 +392,12 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                     self.gui.DrawBoard(piece_graph,
                                        graph_offset=offset,
                                        line_color=color_piece,
-                                       vertex_highlight_color="black",
-                                       vertex_highlight_size=5,
                                        tags="piece_on_board")
                     time.sleep(self.gui_sleep_time * delay_multiplier)
 
 
         def gui_clear_try_piece_on_board(self, delay_multiplier=1):
             if self.gui_show_each_try:
-                print(self.gui_sleep_time, delay_multiplier)
                 self.gui.ClearBoard("piece_on_board")
                 time.sleep(self.gui_sleep_time * delay_multiplier)
 
@@ -356,18 +405,20 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
             if self.gui_show_placed_pieces:
                 self.gui.DrawBoard(piece_graph,
                                    graph_offset=offset,
-                                   line_color="green",
-                                   vertex_highlight_color="black",
-                                   vertex_highlight_size=5,
+                                   line_color=piece_graph.color,
                                    tags="placed_piece")
                 time.sleep(self.gui_sleep_time * delay_multiplier)
 
-        def gui_force_show_placed_pieces(self):
+        def gui_redraw_placed_pieces(self):
+            if self.gui_show_placed_pieces:
+                self.gui.ClearBoard("placed_piece")
+                for piece_id, (piece_graph, offset) in self.placed_pieces.items():
+                    self.gui_placed_piece(piece_graph, offset, 0)
+
+        def gui_force_redraw_placed_pieces(self):
             old = self.gui_show_placed_pieces
             self.gui_show_placed_pieces = True
-            self.gui.ClearBoard("placed_piece")
-            for piece_id, (piece_graph, offset) in self.placed_pieces.items():
-                self.gui_placed_piece(piece_graph, offset)
+            self.gui_redraw_placed_pieces()
             self.gui_show_placed_pieces = old
 
         def gui_clear_placed_pieces(self, delay_multiplier=1):
@@ -380,6 +431,14 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                 self.gui.DrawPiece(piece_graph, highlight=color)
                 time.sleep(self.gui_highlight_piece_sleep_time * delay_multiplier)
 
+        def gui_highlight_remaining_board(self):
+            if self.gui_show_removals:
+                self.gui.DrawBoard(self.board_graph,
+                                   line_color="light yellow",
+                                   tags="board_highlight")
+                time.sleep(2)
+                self.gui.ClearBoard("board_highlight")
+                time.sleep(.1)
 
         def start_over(self):
             self.gui_clear_placed_pieces()
@@ -388,7 +447,12 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                 for graph in graphs:
                     self.available_pieces.append(graph)
             self.placed_pieces = {}
-            self.board_graph = board_graph_original.Copy()
+            self.board_graph = self.board_graph_original.Copy()
+            self.board_graph_previous = []
+            self.available_pieces_previous = []
+            self.placed_pieces_previous = []
+
+            self.gui_highlight_remaining_board()
 
         def get_vertex_with_fewest_edges(self):
             v = None
@@ -400,7 +464,6 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                         if edges < min_edges:
                             min_edges = edges
                             v = (x, y)
-            #v = (2,6)
             return v
 
         def subtract_piece_from_board(self, piece_graph, graph_offset):
@@ -417,10 +480,25 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                     if board_y < 0 or board_y >= self.board_graph.height:
                         continue
                     board_vertex = self.board_graph.grid[board_x][board_y]
+                    assert(board_vertex is not None)
 
                     for i in range(len(piece_vertex.edges)):
-                        if piece_vertex.edges[i] is not None:
+                        if piece_vertex.edges[i] is not None and board_vertex.edges[i] is not None:
+
+                            if self.gui_show_removals:
+                                self.gui.DrawEdge((board_vertex.offset_cord, board_vertex.edges[i].offset_cord), tags="removed")
+                            pointed_to_vertex = board_vertex.edges[i]
+                            if pointed_to_vertex is not None:
+                                #print("subtracting edge", i, "from", piece_vertex.offset_cord, "affecting", pointed_to_vertex.offset_cord)
+                                for k in range(len(pointed_to_vertex.edges)):
+                                    if pointed_to_vertex.edges[k] is not None:
+                                        if pointed_to_vertex.edges[k].offset_cord == board_vertex.offset_cord:
+                                            pointed_to_vertex.edges[k] = None
                             board_vertex.edges[i] = None
+            if self.gui_show_removals:
+                time.sleep(3)
+                self.gui.ClearBoard("removed")
+                time.sleep(1)
     
         def fits_on_board_with_offset(self, piece_graph, board_graph, vertex_pos, graph_offset):
             vertex_covered = False
@@ -467,7 +545,100 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                     self.gui_clear_try_piece_on_board()
             return None
 
+        # Look to see if there is a stranded region with an edge count that are not a multiple of 5
+        # pieces are all 5 edges, so we need an even 5 edges for a region to have a chance of being
+        # filled
+        def board_has_stranded_regions(self):
+
+            # Determine which edges are reachable from a given direction.
+            # E.g. if a piece covers 0 and 3, then another piece can't go from 1 to 4.
+            #            0   1
+            #             \ /
+            #            5-x-2
+            #             / \
+            #            4   3
+            def reachable_edge_indexes(from_edge_index, v):
+                if from_edge_index is None:
+                    return range(6)
+                else:
+                    def open_to_the_left(x):
+                        left = [5,4,3,2,1,0,5,4,3,2,1,0,5,4,3,2,1,0]
+                        slice_start = left.index(x)+1
+                        open = []
+                        for i in left[slice_start:slice_start + 6]:
+                            if v.edges[i] is None:
+                                break
+                            open.append(i)
+                        return open
+
+                    def open_to_the_right(x):
+                        right = [0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,]
+                        slice_start = right.index(x) + 1
+                        open = []
+                        for i in right[slice_start:slice_start + 6]:
+                            if v.edges[i] is None:
+                                break
+                            open.append(i)
+                        return open
+
+                    to_index_map = {0: 3, 1: 4, 2: 5, 3: 0, 4: 1, 5: 2}
+                    to_index = to_index_map[from_edge_index]
+                    reachable = set()
+                    for i in open_to_the_left(to_index):
+                        reachable.add(i)
+                    for i in open_to_the_right(to_index):
+                        reachable.add(i)
+                    return reachable
+
+            def search_region(v, from_edge_index, edge_set, visited):
+                if v is None:
+                    return
+                if v.offset_cord in visited:
+                    return
+                visited[v.offset_cord] = True
+                for edge_index in reachable_edge_indexes(from_edge_index, v):
+                    edge = v.edges[edge_index]
+                    if edge is not None:
+                        # Sort it, so our results are non-directional
+                        edge_val = tuple(sorted((v.offset_cord, edge.offset_cord)))
+                        if self.gui_show_stranded_tree_walk:
+                            self.gui.DrawEdge(edge_val, line_color="orange", tags="tree_walk")
+                            time.sleep(.01)
+                        edge_set.add(edge_val)
+                        search_region(edge, edge_index, edge_set, visited)
+
+            vertex_visited = {}
+            for x in range(self.board_graph.width):
+                for y in range(self.board_graph.height):
+                    edges = set()
+                    current_v = self.board_graph.grid[x][y]
+                    search_region(current_v, None, edges, vertex_visited)
+
+
+                    if self.gui_show_stranded_tree_walk:
+                        if len(edges) > 0:
+                            print("edges found", len(edges), len(edges) % 5 != 0)
+                        time.sleep(1)
+                        self.gui.ClearBoard("tree_walk")
+
+                    if len(edges) % 5 != 0:
+                        if self.gui_show_stranded:
+                            for edge in edges:
+                                self.gui.DrawEdge(edge, line_color="red", pixel_shift=(3,3), tags="stranded")
+                            time.sleep(4)
+                            self.gui.ClearBoard("stranded")
+                            time.sleep(.1)
+                        return True
+            return False
+
+
         def place_piece(self, piece_graph, fits_offset):
+            
+            # Remember the previous state
+            self.board_graph_previous.append(self.board_graph.Copy())
+            self.available_pieces_previous.append(copy.copy(self.available_pieces))
+            self.placed_pieces_previous.append(copy.copy(self.placed_pieces))
+
             self.gui_placed_piece(piece_graph, fits_offset)
             self.subtract_piece_from_board(piece_graph, fits_offset)
             self.placed_pieces[piece_graph.name] = (piece_graph, fits_offset)
@@ -479,10 +650,41 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
                 else:
                     now_available.append(piece)
 
-            self.available_pieces = [a for a in self.available_pieces if a.name != piece_graph.name]
+            self.available_pieces = now_available
             if len(self.placed_pieces) >= self.max_placed_pieces:
                 self.max_placed_pieces = len(self.placed_pieces)
-                self.gui_force_show_placed_pieces()
+                self.gui_force_redraw_placed_pieces()
+
+            self.gui_highlight_remaining_board()
+
+        def rollback(self, count):
+            for i in range(count):
+                if len(self.board_graph_previous) > 0:
+                    self.board_graph = self.board_graph_previous.pop(-1)
+                    self.available_pieces = self.available_pieces_previous.pop(-1)
+                    self.placed_pieces = self.placed_pieces_previous.pop(-1)
+            self.gui_redraw_placed_pieces()
+
+        def save_to_file(self, attempt_num):
+            time.sleep(1)  # Allow time for the image to be written to the canvas
+            file_name = "./solutions/hash_%016d_attempt_%05d" % (abs(hash(self.board_graph)), attempt_num)
+            self.gui.board.postscript(file=file_name + ".eps")
+            img = Image.open(file_name + ".eps")
+            img.save(file_name + ".png")
+
+        # Create string that uniquely describes the solution
+        def create_solution_hash(self):
+            hash_array = []
+            for piece_id, piece_placement in self.placed_pieces.items():
+                piece_graph, piece_offset = piece_placement
+                hash_array.append((piece_id, piece_offset[0], piece_offset[1]))
+
+            solution_hash = ""
+            hash_array = sorted(hash_array)
+            for info in hash_array:
+                solution_hash += "%s at (%d, %d), " % info
+
+            return solution_hash
 
         def run(self):
             # ------ Main ----------------
@@ -492,44 +694,87 @@ def FindSolutions(board_graph_original, piece_graphs, gui):
             # 4a. Go to 1
             # 3b. If no pieces fit, start over. (This can be optimized a lot)
 
-            # Search until all vertexes are filled
-            attempt_num = 1
-            self.start_over()
-            while True:
-                self.gui_update_settings()
-                vertex_pos = self.get_vertex_with_fewest_edges()
-                if vertex_pos is None or len(self.placed_pieces) == 12:
-                    self.gui_force_show_placed_pieces()
-                    print("Done")
-                    break
-                self.gui_target_vertex(vertex_pos)
-                
-                # Try all the pieces in random order
-                to_try_list = copy.copy(self.available_pieces)
-                random.shuffle(to_try_list)
-                dup_check(to_try_list)
+            solutions = []
+            solutions_found = 0
+            duplicates_found = 0
+            while True:  # Keep finding more and more solutions
+                attempt_num = 1
+                rollback_one_count = 0
+                rollback_two_count = 0
+                startover_count = 0
+                self.max_placed_pieces = 0
+                self.gui_force_redraw_placed_pieces()
+                self.start_over()
 
-                for to_try in to_try_list:
-                    self.gui_highlight_piece(to_try, "gray", 0)
+                while True:  # Keep trying to find a solution
 
-                found_fit = False
-                for to_try in to_try_list:
+                    self.gui_update_settings()
+                    vertex_pos = self.get_vertex_with_fewest_edges()
+                    if vertex_pos is None or len(self.placed_pieces) == 12:  # Did we find a solution?
 
-                    self.gui_highlight_piece(to_try, "yellow")
-                    fits_offset = self.fits_on_board(to_try, board_graph, vertex_pos)
-                    if fits_offset is not None:
-                        self.gui_highlight_piece(to_try, "green")
-                        found_fit = True
-                        self.place_piece(to_try, fits_offset)
+                        solutions_found += 1
+                        solution = self.create_solution_hash()
+                        print("Found solution: ", solution)
+                        if solution not in solutions:
+                            solutions.append(solution)
+                            self.save_to_file(attempt_num)
+                        else:
+                            duplicates_found += 1
+
+                        self.gui_force_redraw_placed_pieces()
                         break
-                    self.gui_highlight_piece(to_try, "red", .1)
-                if not found_fit:
-                    self.gui_target_vertex(vertex_pos, "red")
-                    print("attempt %5d: placed %2d pieces before getting stuck. Max is %2d" % (attempt_num , len(self.placed_pieces), self.max_placed_pieces))
-                    attempt_num += 1
-                    self.start_over()
 
-    finder = Finder(board_graph_original, piece_graphs, gui)
+                    self.gui_target_vertex(vertex_pos)
+
+                    # Try all the pieces in random order
+
+                    to_try_list = copy.copy(self.available_pieces)
+                    random.shuffle(to_try_list)
+                    for to_try in to_try_list:
+                        self.gui_highlight_piece(to_try, "gray", 0)
+
+                    found_fit = False
+                    for to_try in to_try_list:
+                        self.gui_highlight_piece(to_try, "yellow")
+                        fits_offset = self.fits_on_board(to_try, board_graph, vertex_pos)
+                        if fits_offset is not None:
+                            self.gui_highlight_piece(to_try, "pink")
+                            self.place_piece(to_try, fits_offset)
+                            if self.board_has_stranded_regions():
+                                self.gui_highlight_piece(to_try, "dark red", 5)
+                                self.rollback(1)
+                            else:
+                                self.gui_highlight_piece(to_try, "green")
+                                found_fit = True
+                                break
+                        self.gui_highlight_piece(to_try, "red", .1)
+
+                    # We got stuck, so rollback some pieces or start over
+
+                    if not found_fit:
+                        self.gui_target_vertex(vertex_pos, "red")
+                        print("solutions found %4d: dups %4d: attempt %5d: placed %2d pieces before getting stuck. Max is %2d. r1 %2d, r2 %2d, so %2d" %
+                              (solutions_found, duplicates_found, attempt_num , len(self.placed_pieces), self.max_placed_pieces, rollback_one_count, rollback_two_count, startover_count))
+                        attempt_num += 1
+
+                        if False:  # This optimization didn't help
+                            # The more successfully placed pieces the less likely we are to start over and rollback extra
+                            if len(self.placed_pieces) > 0:
+                                random_percent = random.random()
+                                if random_percent < 1/(len(self.placed_pieces)):
+                                    self.start_over()
+                                    startover_count += 1
+                                elif random_percent < 2/(len(self.placed_pieces)):
+                                    self.rollback(2)
+                                    rollback_two_count += 1
+                                else:
+                                    self.rollback(1)
+                                    rollback_one_count += 1
+                        else:
+                            self.start_over()
+                            startover_count += 1
+
+    finder = Finder(board_graph_external, piece_graphs, gui)
     finder.run()
 
 # Launch the thread that will search for solutions
@@ -546,7 +791,6 @@ if __name__== '__main__':
 
     all_pieces = "a b c d e f g h i k j l".split()
     board_graph = GenerateHexGraph(board_string_rep, all_pieces)
-
 
     # Create the pieces in each unique flip/rotation
 
@@ -574,6 +818,9 @@ if __name__== '__main__':
             if row_height < min_row_height:
                 min_row_height = row_height
 
+    # Give each piece a unique color
+
+
 
     # Create the UI
 
@@ -584,14 +831,35 @@ if __name__== '__main__':
                                                          board_graph.height,
                                                          solverGui.board_padding)
 
-    solverGui.DrawBoard(board_graph, tags="board")
+    piece_colors = ["#95D47A",
+                    "#52CCCE",
+                    "#00B0B2",
+                    "#9FC1D3",
+                    "#688FAD",
+                    "#3F647E",
+                    "#A09ED6",
+                    "#6F5495",
+                    "#4B256D",
+                    "#F68FA0",
+                    "#F26279",
+                    "#EF3E5B"]
+
     for piece_id in all_pieces:
+        color = piece_colors.pop(0)
         for graph in piece_graphs[piece_id]:
             y = all_pieces.index(piece_id)
             x = piece_graphs[piece_id].index(graph)
             graph.name = piece_id
             graph.gui_pos = (x, y)
+            graph.color = color
             solverGui.DrawPiece(graph)
+
+    solverGui.DrawBoard(board_graph,
+                        line_color="light yellow",
+                        line_width=14,
+                        border_width=3,
+                        border_color="#444444",
+                        tags="board")
 
     solverGui.Run()
 

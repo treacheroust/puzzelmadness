@@ -131,7 +131,7 @@ class HexVertex:
     def Copy(self):
         v = HexVertex()
         for i in range(6):
-            v.edges[i] = self.edges[i]
+            v.edges[i] = True if self.edges[i] is not None else None
             v.cube_cord = self.cube_cord
             v.offset_cord = self.offset_cord
         return v
@@ -189,9 +189,37 @@ class HexGraph:
             for y in range(self.height):
                 hash_str = "%d,%d: " % (x,y)
                 hash_str += ",".join([str(e is None) for e in self.grid[x][y].edges])
-                #print(hash_str)
                 hash_sum += hash(hash_str)
         return hash_sum
+
+    def ChangeEdgesToVertexes(self):
+        # The graph vertex edges were initialized to True or None
+        # Change the Trues into vertex references (this way we can do graph
+        # searches)
+        for x in range(self.width):
+            for y in range(self.height):    
+                odd = 1 if is_odd(y) else 0
+                even = 1 if is_even(y) else 0
+                #            0   1
+                #             \ /
+                #            5-x-2
+                #             / \
+                #            4   3
+                for i in range(6):
+                    if self.grid[x][y].edges[i] is not None:
+                        if i == 0:
+                            v_pos = (x - odd, y - 1)
+                        if i == 1:
+                            v_pos = (x + even, y - 1)
+                        if i == 2:
+                            v_pos = (x + 1, y)
+                        if i == 3:
+                            v_pos = (x + even, y + 1)
+                        if i == 4:
+                            v_pos = (x - odd, y + 1)
+                        if i == 5:
+                            v_pos = (x - 1, y)
+                        self.grid[x][y].edges[i] = self.grid[v_pos[0]][v_pos[1]]
 
     def UpdateVertexCoordinates(self):
         for x in range(self.width):
@@ -204,6 +232,7 @@ class HexGraph:
         for x in range(graph.width):
             for y in range(graph.height):
                 graph.grid[x][y] = self.grid[x][y].Copy()
+        graph.ChangeEdgesToVertexes()
         return graph
 
     def Flip(self):
@@ -472,5 +501,7 @@ def GenerateHexGraph(data, included_pieces):
                         if False:
                             print(x,y, "row", row, "col", col, row_name, "string_rows", string_rows, "string_cols", string_cols, rowDebug)
                     UpdateVertex(grid[x][y], row_name, rows[row][left:right])
+    graph.ChangeEdgesToVertexes()
+    graph.UpdateVertexCoordinates()    
     return graph
 

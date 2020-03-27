@@ -3,20 +3,26 @@
 from hexPuzzle import *
 
 
-# Print out the board and all the pieces
+# print(out the board and all the pieces)
 all_pieces = "a b c d e f g h i k j l".split()
-if False:
+if True :
     graph = GenerateHexGraph(board_string_rep, all_pieces)
     graph.PrintPretty()
+    for i in range(3):
+        graph = graph.Rotate()
+        graph.Trim()
+    graph.PrintPretty()
 
+if False:
     for piece in all_pieces:
-        print "Piece", piece
+        print("Piece", piece)
         graph = GenerateHexGraph(board_string_rep, [piece])
         graph.Trim()
         graph.PrintPretty()
 
 
-# Trim and print out a single piece
+
+# Trim and print(out a single piece)
 if False:
     graph = GenerateHexGraph(board_string_rep, ["b"])
     graph.Print()
@@ -43,7 +49,7 @@ if False:
 if False:
     graph = None
     for i in range(7):
-        print "-------------", i
+        print("-------------", i)
         if graph is None:
             graph = GenerateHexGraph(board_string_rep, ["e"])
         else:
@@ -55,7 +61,7 @@ if False:
 # Fully rotate each piece
 if False:
     for piece in all_pieces:
-        print "Piece", piece
+        print("Piece", piece)
         graph = GenerateHexGraph(board_string_rep, [piece])
         graph.Trim()
         graph.PrintPretty()
@@ -65,15 +71,15 @@ if False:
         graph.PrintPretty()
 
 # Flip each piece
-if True:
+if False:
     for piece in all_pieces:
     #for piece in ['k']:
-        print "Piece", piece
+        print("Piece", piece)
         graph = GenerateHexGraph(board_string_rep, [piece])
         graph.Trim()
         graph.PrintPretty()
         #graph.Print()
-        print "  flipped"
+        print("  flipped")
         graph = graph.Flip()
         graph.Trim()
         graph.PrintPretty()
@@ -83,7 +89,7 @@ if True:
 if False:
     graphs = []
     for piece in all_pieces:
-        print "Piece", piece
+        print("Piece", piece)
         graph = GenerateHexGraph(board_string_rep, [piece])
         graph.Trim()
         graphs.append(graph)
@@ -98,5 +104,5 @@ if False:
 
     for graph in graphs:
         if graph.height == tallest.height or graph.width == widest.width:
-            print "------------------"
+            print("------------------")
             graph.PrintPretty()
