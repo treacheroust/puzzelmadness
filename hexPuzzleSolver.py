@@ -7,6 +7,7 @@ import threading
 import time
 import random
 import copy
+import os.path
 from PIL import Image   # pip install Pillow to get the PIL package, then ghostscript
                         # also needs to be installed, and it's bin directory added to the path
 
@@ -14,6 +15,7 @@ from PIL import Image   # pip install Pillow to get the PIL package, then ghosts
 color_piece = "#5A2D0D"  # dark brown
 color_piece_border = "black"
 color_bg = "grey"
+
 
 def DrawHexEdge(edge, canvas, row_height, padding, **kwargs):
 
@@ -168,9 +170,9 @@ def DrawHexGraph(graph, canvas, row_height, padding, **kwargs):
 class SolverGui:
 
     XSTRETCH = 315.0 // 270.0
-    BOARD_HEIGHT = 400
+    BOARD_HEIGHT = 476
     BOARD_WIDTH = int(BOARD_HEIGHT * XSTRETCH)
-    PIECE_HEIGHT = 60
+    PIECE_HEIGHT = 48
     PIECE_WIDTH = int(PIECE_HEIGHT * XSTRETCH)
     UPDATE_PERIOD_MS = 100
 
@@ -181,9 +183,10 @@ class SolverGui:
         self.update_work = []
 
         self.ui = tk.Tk()
+        self.ui.title("Hex Puzzle Solver")
 
         # Create board view pane
-        self.board_pane = tk.LabelFrame(text="")
+        self.board_pane = tk.Frame(bg="dark grey")
         self.board_pane.grid(column=0, row=0, sticky=tk.N)
 
         if True:  # row 0
@@ -203,21 +206,21 @@ class SolverGui:
             button.grid(column=0, row=0, sticky=tk.N, padx=5, pady=5)
 
             self.status = tk.StringVar()
-            self.status.set("status ...")
-            self.status_label = tk.Label(self.info_pane, textvariable=self.status).grid(column=1, row=0, padx=5, pady=5)
+            self.status.set("")
+            self.status_label = tk.Label(self.info_pane, textvariable=self.status, bg="grey", font=("Arial", 8), width=60)
+            self.status_label.grid(column=1, row=0, padx=5, pady=5)
 
         if True:  # row 1
-            tk.Label(self.info_pane, text="Verbosity").grid(column=0, row=1, padx=5, pady=5)
-            self.verbosity = tk.Scale(self.info_pane, from_=0, to=4, orient=tk.HORIZONTAL)
-            self.verbosity.set(1)
+            tk.Label(self.info_pane, text="Verbosity", bg="grey").grid(column=0, row=1, padx=5, pady=5)
+            self.verbosity = tk.Scale(self.info_pane, from_=0, to=7, orient=tk.HORIZONTAL, length=360)
+            self.verbosity.set(0)
             self.verbosity.grid(column=1, row=1, padx=5, pady=5)
 
         if True:  # row 2
-            tk.Label(self.info_pane, text="Speed").grid(column=0, row=2, padx=5, pady=5)
-            self.speed = tk.StringVar()
-            self.speed.set("0.1")
-            self.speed_entry = tk.Entry(self.info_pane, textvariable=self.speed).grid(column=1, row=2, padx=5, pady=5)
-
+            tk.Label(self.info_pane, text="Speed", bg="grey").grid(column=0, row=2, padx=5, pady=5)
+            self.speed_scale = tk.Scale(self.info_pane, from_=100, to=0, orient=tk.HORIZONTAL, length=360)
+            self.speed_scale.set(50)
+            self.speed_scale.grid(column=1, row=2, padx=5, pady=5)
 
         # Create pieces section
         self.pieces_pane = tk.LabelFrame(text="")
@@ -246,8 +249,8 @@ class SolverGui:
                          self.pieces[piece_graph.gui_pos],
                          self.piece_row_height,
                          padding,
-                         line_width=4,
-                         border_width=3,
+                         line_width=3,
+                         border_width=2,
                          border_color="black",
                          xstretch=SolverGui.XSTRETCH,
                          line_color=color_piece,
@@ -267,9 +270,9 @@ class SolverGui:
     def DrawBoard(self, board_graph, **kwargs):
         def draw_func():
             kwargs["line_color"] = kwargs.get("line_color", "dark grey")
-            kwargs["line_width"] = kwargs.get("line_width", 12)
+            kwargs["line_width"] = kwargs.get("line_width", 16)
             kwargs["border_color"] = kwargs.get("border_color", "black")
-            kwargs["border_width"] = kwargs.get("border_width", 5)
+            kwargs["border_width"] = kwargs.get("border_width", 7)
             DrawHexGraph(board_graph,
                         self.board,
                         self.board_row_height,
@@ -304,13 +307,15 @@ class SolverGui:
 
 
 # Calculate the row height that would fill a certain canvas height for the given graph
-def GetRowHeightToFitCanvas(pixel_height, graph_rows, pad):
+def GetRowHeightToFitCanvas(pixel_height, graph_rows, pad, fits_perfect=[False]):
     pixel_height = pixel_height - (pad * 2)
     pixels_between_rows = pixel_height // (graph_rows - 1)
     row_height = pixels_between_rows
     actual_pixel_height = pixels_between_rows * (graph_rows - 1)  # Account for integer rounding
+    fits_perfect[0] = True
     if pixel_height != actual_pixel_height:
-        print("pixel_height", pixel_height, "!=" "actual_pixel_height", actual_pixel_height)
+        fits_perfect[0] = False
+        #print("pixel_height", pixel_height, "!=" "actual_pixel_height", actual_pixel_height)
     if False:
         print("pixel_height", pixel_height, "pad", pad, graph_rows, "graph_rows", graph_rows, "hex_height", row_height)
     return row_height
@@ -322,7 +327,7 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
     def adjust_pos(pos, graph_offset):
         # Adjust the postion by the given offset.
         # This is more tricky than it sounds because with a hex grid, each vertical
-        # movement also needs a 0.5 units of horizontal movement 
+        # movement also needs a 0.5 units of horizontal movement
         x, y = pos
         if is_even(y):
             x += graph_offset[0] - (graph_offset[1] // 2)
@@ -331,11 +336,21 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
         y += graph_offset[1]
         return (x, y)
 
+
     class Finder:
         def __init__(self, board_graph, piece_graphs, gui):
             self.board_graph_original = board_graph
             self.piece_graphs = piece_graphs
             self.gui = gui
+            self.available_pieces = []
+            self.placed_pieces = {}
+            self.max_placed_pieces = 0
+            self.board_graph = None
+            self.board_graph_previous = []
+            self.available_pieces_previous = []
+            self.placed_pieces_previous = []
+
+            self.continuously_search_for_solutions = True
             self.gui_sleep_time = 0.2
             self.gui_highlight_piece_sleep_time = 0.0
             self.gui_show_each_try = False
@@ -345,40 +360,40 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
             self.gui_show_piece_highlights = True
             self.gui_show_target_vertex = True
             self.gui_show_placed_pieces = True
-            self.available_pieces = []            
-            self.placed_pieces = {}
-            self.max_placed_pieces = 0
-            self.board_graph = None
-            self.board_graph_previous = []
-            self.available_pieces_previous = []
-            self.placed_pieces_previous = []
+
 
         def gui_update_settings(self):
-            self.gui_show_placed_pieces = False
-            self.gui_show_target_vertex = False
-            self.gui_show_piece_highlights = False
-            self.gui_show_each_try = False
-
             verbosity = self.gui.verbosity.get()
-            if verbosity >= 1:
-                self.gui_show_placed_pieces = True
-            if verbosity >= 2:
-                self.gui_show_target_vertex = True
-            if verbosity >= 3:
-                self.gui_show_piece_highlights = True
-            if verbosity >= 4:
-                self.gui_show_each_try = True
-            try:
-                speed = float(self.gui.speed.get())
-                self.gui_sleep_time = speed
-                self.gui_highlight_piece_sleep_time = speed / 4.0
-            except:
-                pass
+            self.gui_show_each_try = verbosity >= 7
+            self.gui_show_removals = verbosity >= 6
+            self.gui_show_stranded_tree_walk = verbosity >= 5
+            self.gui_show_stranded = verbosity >= 4
+            self.gui_show_piece_highlights = verbosity >= 3
+            self.gui_show_target_vertex = verbosity >= 2
+            self.gui_show_placed_pieces = verbosity >= 1
+
+            if False:
+                # Linear speed
+                #  y = mx + b
+                top_speed = 0.02
+                slow_speed = 5.0
+                m = (top_speed - slow_speed)/100.0
+                b = 5.0
+                x = self.gui.speed_scale.get()
+                new_sleep_time = m * x + b
+            else:
+                # Quadratic (MyCurveFit.com)
+                x = 100 - self.gui.speed_scale.get()
+                new_sleep_time = 0.01 - 0.0023 * x + 0.000522 * (x ** 2)
+
+            if new_sleep_time != self.gui_sleep_time:
+                print("new sleep time is", new_sleep_time)
+                self.gui_sleep_time = new_sleep_time
 
         def gui_set_status(self, string):
             self.gui.SetStatus(string)
 
-        def gui_target_vertex(self, vertex_pos, color="yellow", delay_multiplier=1):
+        def gui_target_vertex(self, vertex_pos, color="black", delay_multiplier=1):
             if self.gui_show_target_vertex:
                 self.gui.SetStatus("target vertex (%d, %d)" % vertex_pos)
                 self.gui.ClearBoard("target_vertex")
@@ -603,7 +618,7 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                         edge_val = tuple(sorted((v.offset_cord, edge.offset_cord)))
                         if self.gui_show_stranded_tree_walk:
                             self.gui.DrawEdge(edge_val, line_color="orange", tags="tree_walk")
-                            time.sleep(.01)
+                            time.sleep(self.gui_sleep_time / 8)
                         edge_set.add(edge_val)
                         search_region(edge, edge_index, edge_set, visited)
 
@@ -614,20 +629,20 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                     current_v = self.board_graph.grid[x][y]
                     search_region(current_v, None, edges, vertex_visited)
 
-
                     if self.gui_show_stranded_tree_walk:
                         if len(edges) > 0:
-                            print("edges found", len(edges), len(edges) % 5 != 0)
-                        time.sleep(1)
-                        self.gui.ClearBoard("tree_walk")
+                            self.gui_set_status("Graph section has %d edges" % len(edges))
+                            time.sleep(self.gui_sleep_time * 8)
+                            self.gui.ClearBoard("tree_walk")
 
                     if len(edges) % 5 != 0:
                         if self.gui_show_stranded:
                             for edge in edges:
-                                self.gui.DrawEdge(edge, line_color="red", pixel_shift=(3,3), tags="stranded")
-                            time.sleep(4)
+                                self.gui.DrawEdge(edge, line_color="red", line_width=8, tags="stranded")
+                                self.gui_set_status("Stranded graph section has %d edges" % len(edges))
+                            time.sleep(self.gui_sleep_time * 5)
                             self.gui.ClearBoard("stranded")
-                            time.sleep(.1)
+                            time.sleep(self.gui_sleep_time / 2)
                         return True
             return False
 
@@ -665,12 +680,15 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                     self.placed_pieces = self.placed_pieces_previous.pop(-1)
             self.gui_redraw_placed_pieces()
 
-        def save_to_file(self, attempt_num):
+        def save_to_file(self, solution_hash):
             time.sleep(1)  # Allow time for the image to be written to the canvas
-            file_name = "./solutions/hash_%016d_attempt_%05d" % (abs(hash(self.board_graph)), attempt_num)
-            self.gui.board.postscript(file=file_name + ".eps")
-            img = Image.open(file_name + ".eps")
-            img.save(file_name + ".png")
+            file_name = "./solutions/" + solution_hash
+            if not os.path.exists(file_name + ".png"):
+                self.gui.board.postscript(file=file_name + ".eps")
+                img = Image.open(file_name + ".eps")
+                img.save(file_name + ".png")
+            else:
+                print("Solution file already exists")
 
         # Create string that uniquely describes the solution
         def create_solution_hash(self):
@@ -682,7 +700,7 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
             solution_hash = ""
             hash_array = sorted(hash_array)
             for info in hash_array:
-                solution_hash += "%s at (%d, %d), " % info
+                solution_hash += "%s%02d%02d" % info
 
             return solution_hash
 
@@ -694,6 +712,7 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
             # 4a. Go to 1
             # 3b. If no pieces fit, start over. (This can be optimized a lot)
 
+            cli_display_count = 0
             solutions = []
             solutions_found = 0
             duplicates_found = 0
@@ -706,7 +725,12 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                 self.gui_force_redraw_placed_pieces()
                 self.start_over()
 
-                while True:  # Keep trying to find a solution
+                while self.continuously_search_for_solutions:
+
+                    cli_display_count += 1
+                    if self.gui_show_placed_pieces or cli_display_count % 100 == 0:
+                        print("unique solutions %4d: solutions found %4d: duplicates %4d: attempt %5d" %
+                              (solutions_found - duplicates_found, solutions_found, duplicates_found, attempt_num))
 
                     self.gui_update_settings()
                     vertex_pos = self.get_vertex_with_fewest_edges()
@@ -717,7 +741,7 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                         print("Found solution: ", solution)
                         if solution not in solutions:
                             solutions.append(solution)
-                            self.save_to_file(attempt_num)
+                            self.save_to_file(solution)
                         else:
                             duplicates_found += 1
 
@@ -753,11 +777,10 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
 
                     if not found_fit:
                         self.gui_target_vertex(vertex_pos, "red")
-                        print("solutions found %4d: dups %4d: attempt %5d: placed %2d pieces before getting stuck. Max is %2d. r1 %2d, r2 %2d, so %2d" %
-                              (solutions_found, duplicates_found, attempt_num , len(self.placed_pieces), self.max_placed_pieces, rollback_one_count, rollback_two_count, startover_count))
                         attempt_num += 1
 
                         if False:  # This optimization didn't help
+
                             # The more successfully placed pieces the less likely we are to start over and rollback extra
                             if len(self.placed_pieces) > 0:
                                 random_percent = random.random()
@@ -810,6 +833,25 @@ if __name__== '__main__':
 
     # Calculate row height for displaying pieces
 
+    if False:
+        # Print info to help figure out a good pixel height for the pieces
+        results = {}
+        for h in range(40, 80):
+            for pad in range(3,9):
+
+                fits_count = 0
+                fits = [False]
+                for piece_id, graphs in piece_graphs.items():
+                    piece_graphs[piece_id] = list(graphs)  # Convert the set to a list
+                    for graph in graphs:
+                        GetRowHeightToFitCanvas(h, graph.height, pad, fits)
+                        fits_count += 0 if fits[0] else 1
+                results[(h, pad)] = fits_count
+
+        for k, v in results.items():
+            print(k, v)
+
+
     min_row_height = 9999
     for piece_id, graphs in piece_graphs.items():
         piece_graphs[piece_id] = list(graphs)  # Convert the set to a list
@@ -856,8 +898,8 @@ if __name__== '__main__':
 
     solverGui.DrawBoard(board_graph,
                         line_color="light yellow",
-                        line_width=14,
-                        border_width=3,
+                        line_width=18,
+                        border_width=5,
                         border_color="#444444",
                         tags="board")
 
