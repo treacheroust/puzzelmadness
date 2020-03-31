@@ -8,8 +8,17 @@ import time
 import random
 import copy
 import os.path
-from PIL import Image   # pip install Pillow to get the PIL package, then ghostscript
-                        # also needs to be installed, and it's bin directory added to the path
+
+
+try:
+    can_save_image_file = True
+    from PIL import Image   # pip install Pillow to get the PIL package, then ghostscript
+                            # also needs to be installed, and it's bin directory added to the path
+except ModuleNotFoundError as e:
+    can_save_image_file = False
+    print(e)
+    
+    
 
 
 color_piece = "#5A2D0D"  # dark brown
@@ -550,15 +559,16 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
             x_range = [x for x in x_range if x >= 0]
             y_range = range(vertex_pos[1] - (piece_graph.height), vertex_pos[1] + 1)
             y_range = [y for y in y_range if y >= 0 and y < board_graph.height]
+            offsets = set()
             for x_shift in x_range:
                 for y_shift in y_range:
                     offset = (x_shift, y_shift)
                     self.gui_try_piece_on_board(piece_graph, offset)
                     if self.fits_on_board_with_offset(piece_graph, board_graph, vertex_pos, offset):
                         self.gui_clear_try_piece_on_board()
-                        return offset
+                        offsets.add(offset)                        
                     self.gui_clear_try_piece_on_board()
-            return None
+            return offsets
 
         # Look to see if there is a stranded region with an edge count that are not a multiple of 5
         # pieces are all 5 edges, so we need an even 5 edges for a region to have a chance of being
@@ -681,30 +691,34 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
             self.gui_redraw_placed_pieces()
 
         def save_to_file(self, solution_hash):
-            time.sleep(1)  # Allow time for the image to be written to the canvas
-            file_name = "./solutions/" + solution_hash
-            if not os.path.exists(file_name + ".png"):
-                self.gui.board.postscript(file=file_name + ".eps")
-                img = Image.open(file_name + ".eps")
-                img.save(file_name + ".png")
+            global can_save_image_file
+            if not can_save_image_file:
+                print("Can't save solution image - Pillow needs to be installed")
             else:
-                print("Solution file already exists")
+                time.sleep(1)  # Allow time for the image to be written to the canvas
+                file_name = "./solutions/" + solution_hash
+                if not os.path.exists(file_name + ".png"):
+                    self.gui.board.postscript(file=file_name + ".eps")
+                    img = Image.open(file_name + ".eps")
+                    img.save(file_name + ".png")
+                else:
+                    print("Solution file already exists")
 
         # Create string that uniquely describes the solution
         def create_solution_hash(self):
             hash_array = []
             for piece_id, piece_placement in self.placed_pieces.items():
                 piece_graph, piece_offset = piece_placement
-                hash_array.append((piece_id, piece_offset[0], piece_offset[1]))
+                hash_array.append((piece_id, piece_graph.rotation_id, piece_offset[0], piece_offset[1]))
 
             solution_hash = ""
             hash_array = sorted(hash_array)
             for info in hash_array:
-                solution_hash += "%s%02d%02d" % info
+                solution_hash += "%s%02d%02d%02d" % info
 
             return solution_hash
 
-        def run(self):
+        def run_old(self):
             # ------ Main ----------------
             # 1. Find a vertexes in the graph with the fewest edges (this will be the sides at first)
             # 2. Try pieces randomly until a fit is found
@@ -759,10 +773,9 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
 
                     found_fit = False
                     for to_try in to_try_list:
+                        fits_offsets = self.fits_on_board(to_try, board_graph, vertex_pos)
                         self.gui_highlight_piece(to_try, "yellow")
-                        fits_offset = self.fits_on_board(to_try, board_graph, vertex_pos)
-                        if fits_offset is not None:
-                            self.gui_highlight_piece(to_try, "pink")
+                        for fits_offset in fits_offsets:
                             self.place_piece(to_try, fits_offset)
                             if self.board_has_stranded_regions():
                                 self.gui_highlight_piece(to_try, "dark red", 5)
@@ -771,6 +784,8 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                                 self.gui_highlight_piece(to_try, "green")
                                 found_fit = True
                                 break
+                        if found_fit:
+                            break
                         self.gui_highlight_piece(to_try, "red", .1)
 
                     # We got stuck, so rollback some pieces or start over
@@ -796,6 +811,71 @@ def FindSolutions(board_graph_external, piece_graphs, gui):
                         else:
                             self.start_over()
                             startover_count += 1
+
+        def run(self):
+            # ------ Main ----------------
+            # Recursive solutions finder will find ALL solutions
+            #    Find a vertexes in the graph with the fewest edges (this will be the sides at first)
+            #    if there are none we have a solution
+            #    For each piece
+            #       If it fits, place it and recurse
+
+            self.attempt_num = 0
+            self.solutions = []
+            self.solutions_found = 0
+            self.duplicates_found = 0
+            self.progress = 0
+            self.start_over()
+
+            def solve(self, depth):
+                
+                self.attempt_num += 1
+                if self.gui_show_placed_pieces or self.attempt_num % 100 == 0:
+                        print("unique solutions %4d: solutions found %4d: duplicates %4d: attempt %5d, progress %s" %
+                              (self.solutions_found - self.duplicates_found, self.solutions_found, self.duplicates_found, self.attempt_num, self.progress))
+                self.gui_update_settings()
+
+                vertex_pos = self.get_vertex_with_fewest_edges()
+                if vertex_pos is None or len(self.placed_pieces) == 12:  # Did we find a solution?
+                    self.solutions_found += 1
+                    solution = self.create_solution_hash()
+                    print("Found solution: ", solution)
+                    if solution not in self.solutions:
+                        self.solutions.append(solution)
+                        self.save_to_file(solution)
+                    else:
+                        print("Duplicate!")
+                        self.duplicates_found += 1
+                    self.gui_force_redraw_placed_pieces()
+                    self.max_placed_pieces = 0 # Force pieces to be displayed with verbosity 0
+
+                self.gui_target_vertex(vertex_pos)
+                if self.gui_show_piece_highlights:
+                    for to_try in self.available_pieces:
+                        self.gui_highlight_piece(to_try, "gray", 0)
+
+                # Try each piece
+
+                i = 0
+                for to_try in self.available_pieces:
+                    if depth == 0:
+                        self.progress = "%d of %d" % (i, len(self.available_pieces))
+                        i += 1
+
+                    fits_offsets = self.fits_on_board(to_try, board_graph, vertex_pos)                    
+                    for fits_offset in fits_offsets:
+                        
+                        self.gui_highlight_piece(to_try, "yellow")
+                        self.place_piece(to_try, fits_offset)
+                        if self.board_has_stranded_regions():
+                            self.gui_highlight_piece(to_try, "dark red", 5)
+                            self.rollback(1)
+                        else:
+                            self.gui_highlight_piece(to_try, "green")
+                            solve(self, depth+1)  # Recurse
+                            self.rollback(1)  # Rollback to try then next piece
+
+            solve(self, 0)  # Call the recursive solver
 
     finder = Finder(board_graph_external, piece_graphs, gui)
     finder.run()
@@ -860,10 +940,6 @@ if __name__== '__main__':
             if row_height < min_row_height:
                 min_row_height = row_height
 
-    # Give each piece a unique color
-
-
-
     # Create the UI
 
     solverGui = SolverGui(LaunchFindSolutionsThread, (board_graph, piece_graphs))
@@ -872,8 +948,8 @@ if __name__== '__main__':
     solverGui.board_row_height = GetRowHeightToFitCanvas(SolverGui.BOARD_HEIGHT,
                                                          board_graph.height,
                                                          solverGui.board_padding)
-
-    piece_colors = ["#95D47A",
+    
+    piece_colors = ["#95D47A",  # Give each piece a unique color
                     "#52CCCE",
                     "#00B0B2",
                     "#9FC1D3",
@@ -892,6 +968,7 @@ if __name__== '__main__':
             y = all_pieces.index(piece_id)
             x = piece_graphs[piece_id].index(graph)
             graph.name = piece_id
+            graph.rotation_id = x
             graph.gui_pos = (x, y)
             graph.color = color
             solverGui.DrawPiece(graph)
