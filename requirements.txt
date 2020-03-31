@@ -1,0 +1,6 @@
+The following python modules need to be installed:
+   tkinter (this may already be installed)
+   Pillow (this can be skipped if you don't care about saving the solutions to file)
+
+The following external dependences are required:
+   Ghostscript must be installed and added to the path.  This is used by Pillow to convert postscript files to other formats.
